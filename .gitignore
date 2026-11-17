@@ -1,0 +1,61 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### Configuracao local e segredos ###
+src/main/resources/application-local.yml
+.env
+.env.*
+
+# A convencao do projeto: "local" no nome significa "contem segredo". Os padroes sao amplos
+# de proposito - db/*.local.sql cobria o que existe hoje, e um senhas.local.txt passaria
+# direto. Os dois separadores estao aqui porque as duas convencoes convivem: ponto nos
+# scripts de banco (criar-roles.local.sql) e hifen nos perfis do Spring
+# (application-local.properties, application-local.yaml).
+*.local.*
+*-local.*
+
+### Scripts de banco preenchidos com segredo ###
+db/*.local.sql
+
+### Log ###
+logs/
+
+### Despejos da JVM ###
+# Um hs_err_pid*.log registra o ambiente inteiro do processo, variaveis de ambiente
+# incluidas: rodar o Maven com PGPASSWORD ou DB_PASSWORD exportados poe a senha no arquivo.
+# Um .hprof e pior - e a memoria da aplicacao, com senhas, hashes e tokens em claro.
+# Nao sao hipoteses: um hs_err nasceu na raiz do backend em 2026-11-17, por falta de memoria.
+hs_err_pid*.log
+replay_pid*.log
+*.hprof
