@@ -1,0 +1,56 @@
+## Modelo de configuração local.
+## Copie este arquivo para application-local.yml e preencha com os valores reais.
+## application-local.yml é ignorado pelo Git; este modelo é versionado e não contém segredo.
+##
+## ORDEM DA PRIMEIRA SUBIDA — ela importa, e errá-la custa tempo:
+##
+##   1. Criar o banco, como superusuário:
+##        psql -h localhost -p 5433 -U postgres -c "CREATE DATABASE todonotes_db"
+##
+##   2. Criar as duas roles. O script é modelo: trabalhe sobre uma cópia, que o Git ignora.
+##        cp db/criar-roles.sql db/criar-roles.local.sql
+##        (troque SENHA_DA_MIGRACAO e SENHA_DA_APLICACAO na cópia)
+##        psql -h localhost -p 5433 -U postgres -d todonotes_db -f db/criar-roles.local.sql
+##
+##   3. Preencher este arquivo como application-local.yml, com as mesmas duas senhas.
+##
+##   4. Subir a aplicação. É o Flyway, na subida, que cria as tabelas:
+##        mvn spring-boot:run
+##
+##   5. Só agora criar a conta de acesso — a tabela `usuarios` passou a existir no passo 4:
+##        psql -h localhost -p 5433 -U postgres -d todonotes_db \
+##             -v usuario=giulivan -v senha='uma frase de senha longa' -f db/criar-usuario.sql
+##
+## Sem o passo 2 a aplicação não sobe: as credenciais abaixo não existem. Invertendo 4 e 5,
+## o criar-usuario.sql falha por tabela inexistente.
+
+spring:
+  datasource:
+    # Senha de todonotes_app — a role de execução, restrita a DML nas quatro tabelas.
+    password: SENHA_DA_APLICACAO
+  flyway:
+    # Senha de todonotes_migracao — a role dona do schema, usada só durante a subida.
+    # Separá-las é o ponto: comprometer a aplicação em execução não dá poder de alterar
+    # nem destruir o schema.
+    password: SENHA_DA_MIGRACAO
+
+todonotes:
+  jwt:
+    # Chave Base64 de no mínimo 48 bytes, exigência do HS384. Gere com uma das duas:
+    #   node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+    #   PowerShell: $b=[byte[]]::new(48); [System.Security.Cryptography.RandomNumberGenerator]::Fill($b); [Convert]::ToBase64String($b)
+    secret: SUA_CHAVE_BASE64
+
+## As chaves abaixo têm padrão bom para desenvolvimento e NÃO precisam ser preenchidas
+## aqui. Estão listadas porque são as que mudam ao publicar, e todas viajam por variável
+## de ambiente. Só existem estas — a lista acompanha o application.yml, e documentar
+## variável que o código não lê é pior do que não documentar nada:
+##
+## DB_URL                   padrão jdbc:postgresql://localhost:5433/todonotes_db
+## DB_USERNAME              padrão todonotes_app
+## DB_MIGRACAO_USERNAME     padrão todonotes_migracao
+## CORS_ORIGENS             origens autorizadas a chamar a API de outro domínio.
+##                          Padrão: http://localhost:4200, o `ng serve`. Servindo
+##                          frontend e API sob o mesmo domínio, deixe VAZIO: requisição
+##                          de mesma origem não passa por CORS.
+## JWT_EXPIRACAO_MINUTOS    padrão 1440, um dia.

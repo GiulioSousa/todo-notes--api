@@ -1,0 +1,76 @@
+server:
+  port: 8080
+  # Endereço de escuta e cabeçalhos de proxy ficam fora por enquanto: não há ambiente de
+  # produção definido (ver execucao.md). O GeFinX tem os dois amarrados — `server.address`
+  # em loopback e `forward-headers-strategy` — e eles entram juntos ou nenhum, porque é a
+  # primeira que torna a segunda segura.
+
+spring:
+  application:
+    name: todonotes-backend
+  profiles:
+    # Sem perfil explícito, carrega application-local.yml, que o Git ignora.
+    default: local
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/todonotes_db}
+    # Role de execução: só DML nas quatro tabelas, sem DDL e sem acesso ao histórico do
+    # Flyway. Quem cria e altera o schema é a role de migração abaixo.
+    username: ${DB_USERNAME:todonotes_app}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      # O schema é do Flyway. `validate` recusa subir se a entidade e a tabela divergirem,
+      # que é a única forma de descobrir isso antes de uma consulta falhar em produção.
+      ddl-auto: validate
+    open-in-view: false
+    # Ligar os dois juntos é o caminho para ver os UPDATE da renumeração da faixa quando
+    # um card é arrastado — é o que mais vale olhar neste projeto.
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # Credencial própria, com DDL, usada só durante a subida. O Spring Boot deriva a
+    # conexão do datasource acima e troca apenas usuário e senha.
+    #
+    # Esta role tem de ser a mesma do criar-roles.sql: os privilégios padrão de lá valem
+    # para objetos criados por ela. Se o Flyway conectar como outra, as tabelas nascem
+    # invisíveis para todonotes_app e a aplicação sobe sem enxergar nada.
+    user: ${DB_MIGRACAO_USERNAME:todonotes_migracao}
+    password: ${DB_MIGRACAO_PASSWORD}
+
+logging:
+  file:
+    # Em console, a trilha some junto com a janela — e "quem tentou entrar na semana
+    # passada" é exatamente a pergunta que ela existe para responder. Rotação e retenção
+    # ficam nos padrões do Spring Boot: 10MB por arquivo, 7 de histórico.
+    name: logs/backend.log
+  level:
+    com.todonotes.backend: INFO
+    # Nível próprio, de propósito: calar a depuração da aplicação não pode, junto, apagar
+    # o registro de quem entrou.
+    AUDITORIA: INFO
+
+todonotes:
+  cors:
+    # Origens autorizadas a chamar a API de outro domínio. O padrão é o `ng serve`.
+    # Servindo frontend e API sob o mesmo domínio, requisição de mesma origem não passa
+    # por CORS e a lista pode ficar vazia: `CORS_ORIGENS=` desliga o acesso entre origens.
+    origens: ${CORS_ORIGENS:http://localhost:4200}
+  jwt:
+    # Sem padrão, de propósito: a aplicação não sobe sem segredo definido. Em
+    # desenvolvimento ele vem do application-local.yml; em produção, da variável.
+    secret: ${JWT_SECRET}
+    expiracao-minutos: ${JWT_EXPIRACAO_MINUTOS:1440}
+  limite-requisicoes:
+    # Protege o login contra forca bruta, por endereco de origem.
+    login:
+      tentativas: 5
+      janela: 1m
+    # Por conta alvo: o limite por origem acima nao alcanca ataque distribuido, em que
+    # cada origem chega com o balde intacto. Zera a cada login bem-sucedido.
+    login-por-conta:
+      tentativas: 10
+      janela: 15m
