@@ -6,6 +6,11 @@ name: CI
 # classes sobem contra um PostgreSQL de verdade, com o mesmo application.yml de
 # desenvolvimento. E a convencao do projeto (e do GeFinX), e o que o CI tem de prover aqui:
 # um banco, as duas roles e os privilegios padrao, na ordem do application-example.yml.
+#
+# AS VERSOES DAS ACTIONS NAO PODEM REGREDIR. checkout v7, setup-java v6, upload-artifact v7 e
+# gitleaks v3 sao os majors de runtime Node 24. A geracao v4 delas roda em Node 20, que o
+# GitHub removeu dos runners em 16/09/2026: fixar uma versao anterior nao e ser conservador,
+# e nao rodar.
 
 on:
   push:
@@ -31,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # O historico inteiro: a conferencia le mensagens, nao arvores.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -60,7 +65,7 @@ jobs:
       # O historico inteiro: o gitleaks varre commit por commit, nao a arvore atual. Um
       # segredo que entrou e saiu num commit seguinte continua no historico, e e esse o caso
       # que mais importa pegar.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -76,7 +81,7 @@ jobs:
       # A action e gratuita em repositorio de conta pessoal; o GITLEAKS_LICENSE so e exigido
       # de repositorio de organizacao.
       - name: gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
@@ -109,10 +114,10 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Preparar o JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           java-version: '25'
           distribution: temurin
@@ -168,7 +173,7 @@ jobs:
       # falha no CI vira "o build quebrou" e obriga a reproduzir na maquina.
       - name: Guardar os relatorios de teste
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: surefire-reports
           path: target/surefire-reports/
