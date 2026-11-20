@@ -1,0 +1,30 @@
+# Configuracao do gitleaks, a segunda camada da varredura de segredos.
+#
+# A primeira e o .github/scripts/conferir-segredos.sh, que cobra a convencao do .gitignore.
+# Esta aqui e a que olha o CONTEUDO, por padrao e por entropia, no historico inteiro.
+#
+# As regras padrao do gitleaks ficam valendo; o que este arquivo acrescenta e uma lista de
+# valores que SAO versionados de proposito e nao podem virar alarme.
+#
+# A permissao e por VALOR, nao por caminho. Permitir o application-example.yml inteiro seria
+# o avesso do que se quer: ele e o modelo do application-local.yml, e por isso e justamente
+# o arquivo com mais chance de receber uma senha de verdade por descuido. Com a permissao
+# amarrada aos placeholders, o placeholder passa e qualquer outro valor de alta entropia no
+# mesmo arquivo continua parando o build.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholders e valores de exemplo versionados de proposito"
+regexTarget = "match"
+regexes = [
+  # Os dois placeholders de senha de role, no criar-roles.sql e no application-example.yml.
+  '''SENHA_DA_APLICACAO''',
+  '''SENHA_DA_MIGRACAO''',
+  # O placeholder da chave do JWT, no application-example.yml.
+  '''SUA_CHAVE_BASE64''',
+  # A senha das contas de teste, que nascem e morrem em cada cenario (ContasDeTeste.SENHA), e
+  # a do exemplo de uso do criar-usuario.sql.
+  '''uma frase de senha''',
+]
