@@ -95,6 +95,24 @@ que isso não passe batido:
 É o mesmo script que o CI roda, e nele não há linha de coautoria: o histórico diz o que mudou,
 e a autoria do repositório é de uma pessoa só.
 
+## Segredos
+
+A convenção é uma só: **"local" no nome significa "contém segredo"**, e o `.gitignore` cobre
+`*.local.*`, `*-local.*`, `db/*.local.sql` e os despejos da JVM, que carregam o ambiente
+inteiro do processo. Para conferir que nada escapou:
+
+```
+.github/scripts/conferir-segredos.sh
+```
+
+Ele acusa duas coisas: arquivo rastreado que o próprio `.gitignore` diz ignorar — o caso de
+quem entrou antes de a regra existir, e que o Git versiona em silêncio para sempre — e nome com
+forma de segredo ainda que o `.gitignore` não o cubra. O segundo não consulta o `.gitignore` de
+propósito: o furo que esta conferência existe para pegar já aconteceu **dentro** dele.
+
+O CI roda esse script e, depois, o `gitleaks` por conteúdo e entropia no histórico inteiro. Os
+placeholders versionados estão permitidos por valor no `.gitleaks.toml`, nunca por caminho.
+
 ## Antes do primeiro deploy
 
 Três ausências que são bloqueio de deploy, e que entram **juntas** quando houver ambiente de
