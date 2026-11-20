@@ -1,0 +1,147 @@
+name: CI
+
+# Build, testes e conferencia das mensagens de commit.
+#
+# Os testes deste repositorio NAO usam Testcontainers nem perfil de teste: tres das oito
+# classes sobem contra um PostgreSQL de verdade, com o mesmo application.yml de
+# desenvolvimento. E a convencao do projeto (e do GeFinX), e o que o CI tem de prover aqui:
+# um banco, as duas roles e os privilegios padrao, na ordem do application-example.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Um push em cima do anterior cancela a execucao antiga: o que importa e o estado da ponta.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  commits:
+    name: Mensagens de commit
+    runs-on: ubuntu-latest
+    steps:
+      # O historico inteiro: a conferencia le mensagens, nao arvores.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Conferir a convencao
+        env:
+          ANTERIOR: ${{ github.event.before }}
+          ZEROS: '0000000000000000000000000000000000000000'
+        run: |
+          set -euo pipefail
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            # Pull request: so os commits que ele traz.
+            git fetch --no-tags origin "$GITHUB_BASE_REF"
+            .github/scripts/conferir-commits.sh "origin/$GITHUB_BASE_REF..HEAD"
+          elif [ "$ANTERIOR" != "$ZEROS" ] && git cat-file -e "$ANTERIOR" 2>/dev/null; then
+            # Push em main: so o que o push trouxe.
+            .github/scripts/conferir-commits.sh "$ANTERIOR..$GITHUB_SHA"
+          else
+            # Primeiro push do repositorio: nao ha ponto anterior, entao confere tudo.
+            .github/scripts/conferir-commits.sh
+          fi
+
+  build:
+    name: Build e testes
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # A versao local e a 18.3. O servidor de deploy e mais antigo (ver execucao.md), e e
+        # uma diferenca a resolver antes do primeiro deploy, nao aqui: o CI confere o codigo
+        # contra a versao em que ele e desenvolvido.
+        image: postgres:18-alpine
+        env:
+          # Senha do superusuario do container, que vive dentro da rede deste job, nao
+          # recebe dado nenhum e morre com ele. Nao e segredo, e por isso nao vem de
+          # secrets: amarrar a senha a execucao e mais honesto do que escrever "postgres"
+          # aqui e mais util do que um segredo que ninguem pode conferir.
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          # O banco nasce com o container. As roles e os privilegios ainda nao: eles vem do
+          # db/criar-roles.sql, versionado, no passo abaixo.
+          POSTGRES_DB: todonotes_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar o JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+          cache: maven
+
+      # As duas senhas das roles nascem aqui e morrem com o job. Nao ha segredo a guardar no
+      # repositorio: o banco e descartavel, e uma senha por execucao e melhor do que uma
+      # senha fixa em qualquer lugar.
+      - name: Criar as roles e os privilegios
+        env:
+          PGPASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          SENHA_APP=$(openssl rand -hex 24)
+          SENHA_MIGRACAO=$(openssl rand -hex 24)
+          echo "::add-mask::$SENHA_APP"
+          echo "::add-mask::$SENHA_MIGRACAO"
+          echo "DB_PASSWORD=$SENHA_APP" >> "$GITHUB_ENV"
+          echo "DB_MIGRACAO_PASSWORD=$SENHA_MIGRACAO" >> "$GITHUB_ENV"
+
+          # O mesmo procedimento do application-example.yml: o script versionado e modelo, e
+          # quem roda e uma copia com as senhas no lugar dos dois placeholders. A copia fica
+          # fora da arvore de trabalho para nao haver como commitar.
+          COPIA="$RUNNER_TEMP/criar-roles.local.sql"
+          sed -e "s/SENHA_DA_MIGRACAO/$SENHA_MIGRACAO/" \
+              -e "s/SENHA_DA_APLICACAO/$SENHA_APP/" \
+              db/criar-roles.sql > "$COPIA"
+
+          psql -h localhost -p 5432 -U postgres -d todonotes_db -f "$COPIA"
+
+      # O Flyway aplica a V1 na subida do contexto, e o ddl-auto: validate confere as
+      # entidades contra o que ele criou. Um mapeamento divergente derruba o
+      # TodoNotesApplicationTests aqui, que e onde deve derrubar.
+      - name: mvn verify
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/todonotes_db
+        run: |
+          set -euo pipefail
+          # 48 bytes em Base64, o minimo do HS384. Uma chave por execucao: nenhum token
+          # emitido no CI vale em outro lugar.
+          JWT_SECRET=$(openssl rand -base64 48)
+          echo "::add-mask::$JWT_SECRET"
+          export JWT_SECRET
+          mvn -B -ntp verify
+
+      # O Dependabot sobe versao no pom.xml e nao sabe que ha um README falando delas. Esta
+      # conferencia e o que impede a tabela de versoes de envelhecer em silencio. O Node ja
+      # vem instalado no runner, entao nao ha setup-node aqui.
+      - name: Conferir o bloco de versoes do README
+        run: node .github/scripts/versoes-readme.mjs --conferir
+
+      # Os .txt e .xml do surefire dizem qual caso caiu e com que mensagem. Sem isto, uma
+      # falha no CI vira "o build quebrou" e obriga a reproduzir na maquina.
+      - name: Guardar os relatorios de teste
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          retention-days: 7

@@ -1,0 +1,16 @@
+# Escopos aceitos no assunto do commit, um por linha.
+#
+# Escopo e BOUNDED CONTEXT, nao camada: `tarefas`, nao `controller`. A lista vem da Secao 9
+# do ESPECIFICACOES.md e e a mesma que o release-please ve ao montar o CHANGELOG.
+#
+# Commit sem escopo e valido - `build: inicia o projeto` e `test: adiciona o teste de carga`
+# estao no historico. O escopo entra quando ha um contexto claro a nomear.
+#
+# Linhas em branco e as que comecam com # sao ignoradas pelo conferir-commits.sh.
+
+auth
+usuarios
+tarefas
+categorias
+preferencias
+db
