@@ -1,4 +1,4 @@
-# todo-notes — backend
+# todo-notes — API
 
 API do todo-notes: tarefas em três faixas de prioridade, arrastáveis, com categorias e
 preferências de exibição. Conta única por instalação, criada pelo banco — não há rota de
@@ -9,7 +9,9 @@ Spring Boot com arquitetura em quatro camadas por contexto (`dominio`, `aplicaca
 `compartilhado` para segurança, auditoria e tratamento de erro. O esquema é do Flyway, e o
 `ddl-auto: validate` recusa subir se entidade e tabela divergirem.
 
-O frontend fica no seu próprio repositório, com linha de versão própria.
+O frontend fica em [todo-notes--frontend](https://github.com/GiulioSousa/todo-notes--frontend),
+com linha de versão própria. Na máquina de desenvolvimento este repositório é a pasta
+`backend/`, ao lado dele.
 
 ## Pilha
 
