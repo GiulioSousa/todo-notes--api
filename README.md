@@ -115,18 +115,40 @@ propósito: o furo que esta conferência existe para pegar já aconteceu **dentr
 O CI roda esse script e, depois, o `gitleaks` por conteúdo e entropia no histórico inteiro. Os
 placeholders versionados estão permitidos por valor no `.gitleaks.toml`, nunca por caminho.
 
-## Antes do primeiro deploy
+## Deploy
 
-Três ausências que são bloqueio de deploy, e que entram **juntas** quando houver ambiente de
-produção definido:
+A aplicação roda atrás do nginx, que serve o frontend e repassa `/api` para ela, sob um só
+domínio. Os arquivos do servidor estão em [`deploy/`](deploy/), sem segredo:
 
-- `server.address` em loopback;
-- `forward-headers-strategy: FRAMEWORK`;
-- Actuator em porta fechada.
+| Arquivo | Destino no servidor |
+|---|---|
+| `preparar-servidor.sh` | Roda uma vez, como root: usuário, diretórios, segredos, banco, unit, nginx e sudo |
+| `todonotes.service` | `/etc/systemd/system/todonotes.service` |
+| `nginx-todonotes.conf` | `/etc/nginx/sites-available/todonotes` (só HTTP; o certbot acrescenta o TLS) |
+| `sudoers-todonotes-deploy` | `/etc/sudoers.d/todonotes-deploy` |
+| `todonotes.env.modelo` | Modelo comentado do `/etc/todonotes/todonotes.env`, que o script gera |
 
-As duas primeiras andam com o limite de requisições: ele depende do endereço real do cliente, e
-atrás de um proxy sem `forward-headers` todos os baldes colapsam num só — o primeiro que
-errasse cinco senhas trancaria o login de todo mundo, e a proteção viraria negação de serviço.
+Três configurações de produção andam **juntas**, e todas vêm do arquivo de ambiente:
+
+- `SERVER_ADDRESS=127.0.0.1` — o nginx é a única porta de entrada;
+- `FORWARD_HEADERS_STRATEGY=FRAMEWORK` — o limite de login volta a ver o endereço real do
+  cliente. Sem ela, atrás do proxy todos os baldes colapsam num só, e o primeiro que errasse
+  cinco senhas trancaria o login de todo mundo. Sem o loopback acima, ao contrário, o cliente
+  forjaria o próprio `X-Forwarded-For`;
+- o Actuator na `MANAGEMENT_PORT`, ligada a `127.0.0.1`, só com `health` e sem detalhes.
+
+O nginx precisa **sobrescrever** o `X-Forwarded-For` com `$remote_addr`. Com
+`$proxy_add_x_forwarded_for`, o valor do cliente iria na frente, e o Spring toma a primeira
+entrada.
+
+O jar não leva o `application-local.yml`: o `maven-jar-plugin` exclui `*-local.*` e `*.local.*`
+do empacotamento. Confira mesmo assim antes de publicar:
+
+```bash
+unzip -l target/todonotes-backend.jar | grep application-
+```
+
+Só `application.yml` e `application-example.yml` podem aparecer.
 
 A especificação do projeto e o diário de execução ficam fora dos repositórios, por decisão:
 descrevem o projeto inteiro e não pertencem nem ao backend nem ao frontend.

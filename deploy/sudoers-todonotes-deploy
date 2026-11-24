@@ -1,0 +1,23 @@
+# Deploy do todo-notes conduzido pelo Claude Code, com o usuario claude-todonotes - proprio
+# deste projeto, separado do acesso de qualquer outro sistema do servidor. Instalado em
+# /etc/sudoers.d/todonotes-deploy pelo deploy/preparar-servidor.sh, depois de `visudo -cf`
+# aprovar a sintaxe. Comandos exatos, sem curinga. So ASCII, de proposito: e o arquivo em
+# que um byte estranho pode tirar o sudo de todo mundo.
+#
+# O que esta regra NAO permite: shell de root, psql como postgres, mexer no nginx ou em
+# outra aplicacao do servidor, ou ler /etc/todonotes/todonotes.env (root:root 600).
+#
+# O (todonotes) ALL vale para o usuario da propria aplicacao, dono de /opt/todonotes e de
+# /var/www/todonotes. E ele quem faz o git, o build, a troca do jar e a publicacao do site.
+#
+# O stop existe por causa da memoria: a maquina tem 2 GB e outras aplicacoes em uso real;
+# se o todo-notes apertar as outras, ele e o primeiro a sair.
+
+Cmnd_Alias TODONOTES_SERVICO = /usr/bin/systemctl restart todonotes, \
+    /usr/bin/systemctl stop todonotes, \
+    /usr/bin/systemctl status todonotes --no-pager, \
+    /usr/bin/journalctl -u todonotes --no-pager -n 200
+
+claude-todonotes ALL=(root) NOPASSWD: TODONOTES_SERVICO
+claude-todonotes ALL=(todonotes) NOPASSWD: ALL
+claude-todonotes ALL=(postgres) NOPASSWD: /usr/bin/pg_dump -Fc -d todonotes_db -f /var/lib/postgresql/redeploy/todonotes-pre-redeploy.dump

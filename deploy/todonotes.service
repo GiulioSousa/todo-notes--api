@@ -1,0 +1,56 @@
+# Unit do systemd do todo-notes. Instalada em /etc/systemd/system/todonotes.service pelo
+# deploy/preparar-servidor.sh — editar aqui e rodar o script de novo, não editar lá.
+
+[Unit]
+Description=todo-notes API
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+User=todonotes
+Group=todonotes
+
+# NÃO é conforto. `logging.file.name` é RELATIVO (logs/backend.log): sem WorkingDirectory
+# explícito, a trilha de auditoria vai parar em lugar imprevisível.
+WorkingDirectory=/opt/todonotes
+
+# Lido pelo systemd, como root, ANTES de baixar para o usuário todonotes: por isso o
+# arquivo pode ser root:root 600, e o próprio usuário da aplicação não o lê do disco.
+# Argumento de linha de comando, ao contrário, apareceria para todos em `ps aux`.
+EnvironmentFile=/etc/todonotes/todonotes.env
+
+# Caminho ABSOLUTO do JVM, não /usr/bin/java: com dois JDKs na máquina, o link do
+# update-alternatives moveria a aplicação de versão sem ninguém decidir isso.
+#
+# A máquina tem 2 GB e já roda outras JVMs; cada flag aqui é para caber:
+#   -Xmx256m              heap; o domínio é pequeno e o uso é de uma pessoa
+#   -XX:+UseSerialGC      o coletor de menor sobrecarga, adequado a 1 vCPU
+#   -XX:MaxMetaspaceSize  teto para as classes do Spring e do Hibernate
+#   -Xss512k              pilha menor por thread do Tomcat
+ExecStart=/usr/lib/jvm/java-25-openjdk-amd64/bin/java \
+    -Xms64m -Xmx256m \
+    -XX:+UseSerialGC \
+    -XX:MaxMetaspaceSize=160m \
+    -XX:ReservedCodeCacheSize=64m \
+    -Xss512k \
+    -jar /opt/todonotes/todonotes-backend.jar
+
+# A máquina é compartilhada com sistemas em uso real. Se o todo-notes vazar memória, quem
+# morre é o todo-notes.
+MemoryHigh=420M
+MemoryMax=520M
+
+SuccessExitStatus=143
+Restart=always
+RestartSec=10
+
+# O processo só escreve a trilha de auditoria. Nem o jar, nem o código-fonte, nem o site
+# publicado em /var/www/todonotes são graváveis por ele.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/todonotes/logs
+
+[Install]
+WantedBy=multi-user.target
