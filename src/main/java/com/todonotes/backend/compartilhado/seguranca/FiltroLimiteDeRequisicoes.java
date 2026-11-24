@@ -35,8 +35,10 @@ import java.util.List;
  *
  * <p>A origem vem de {@code getRemoteAddr()}, e não de {@code X-Forwarded-For}, que o
  * cliente forjaria. Atrás de um proxy, isso depende de
- * {@code server.forward-headers-strategy}, que ainda não existe — e é por isso que publicar
- * sem ele está registrado como bloqueio, não como pendência.
+ * {@code server.forward-headers-strategy=FRAMEWORK}, que faz o contêiner trocar o endereço
+ * do proxy pelo do cliente antes de a requisição chegar aqui — e só é seguro com a aplicação
+ * em loopback e o proxy sobrescrevendo o cabeçalho. Ver o application.yml e o
+ * {@code EnderecoDeOrigemAtrasDeProxyTest}.
  */
 @Component
 public class FiltroLimiteDeRequisicoes extends OncePerRequestFilter {

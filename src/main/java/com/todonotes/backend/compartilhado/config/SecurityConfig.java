@@ -5,8 +5,10 @@ import com.todonotes.backend.compartilhado.seguranca.FiltroLimiteDeRequisicoes;
 import com.todonotes.backend.compartilhado.seguranca.PontoDeEntradaNaoAutenticado;
 import com.todonotes.backend.compartilhado.seguranca.PropriedadesLimiteDeRequisicoes;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -41,12 +43,29 @@ public class SecurityConfig {
     }
 
     /**
-     * Uma cadeia só. O GeFinX tem duas, porque a primeira libera o health check do Actuator
-     * — que aqui não existe. <b>Quando o Actuator entrar, a cadeia dele precisa vir antes
-     * desta</b>, com {@code @Order}: o {@code anyRequest().authenticated()} abaixo também
-     * alcança a porta de monitoramento, e um health check que exige token não responde a
-     * ninguém, porque quem supervisiona o processo pergunta se ele está vivo justamente
-     * quando não há sessão alguma.
+     * A cadeia do Actuator, antes da principal. Sem ela, o {@code anyRequest().authenticated()}
+     * da cadeia abaixo também alcança a porta de monitoramento e {@code /actuator/health}
+     * responde {@code 401} — e um health check que exige token não responde a ninguém,
+     * porque quem supervisiona o processo pergunta se ele está vivo justamente quando não há
+     * sessão alguma.
+     *
+     * <p>Liberar é seguro porque o endpoint não está exposto: vive numa porta própria ligada
+     * a {@code 127.0.0.1} (bloco {@code management} do application.yml), fora do proxy e do
+     * firewall, e o corpo não traz nada além de UP ou DOWN.
+     */
+    @Bean
+    @Order(1)
+    public SecurityFilterChain cadeiaDeMonitoramento(HttpSecurity http) throws Exception {
+        http
+            .securityMatcher(EndpointRequest.toAnyEndpoint())
+            .csrf(AbstractHttpConfigurer::disable)
+            .authorizeHttpRequests(autorizacao -> autorizacao.anyRequest().permitAll());
+
+        return http.build();
+    }
+
+    /**
+     * A cadeia da API.
      *
      * <p>{@code csrf} desligado é consequência de não haver sessão em cookie: sem cookie, o
      * navegador não anexa credencial a requisição de outro site, e não há o que falsificar.
@@ -56,6 +75,7 @@ public class SecurityConfig {
      * não existe antes de ser barrada.
      */
     @Bean
+    @Order(2)
     public SecurityFilterChain cadeiaDeFiltros(HttpSecurity http) throws Exception {
         http
             .csrf(AbstractHttpConfigurer::disable)

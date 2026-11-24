@@ -1,9 +1,23 @@
 server:
-  port: 8080
-  # Endereço de escuta e cabeçalhos de proxy ficam fora por enquanto: não há ambiente de
-  # produção definido (ver execucao.md). O GeFinX tem os dois amarrados — `server.address`
-  # em loopback e `forward-headers-strategy` — e eles entram juntos ou nenhum, porque é a
-  # primeira que torna a segunda segura.
+  # Botão declarado, e não só precedência de variável: no servidor a 8080 é de outra
+  # aplicação, e quem ler este arquivo não pode achar que a porta é fixa.
+  port: ${SERVER_PORT:8080}
+  # Em produção o backend fica atrás do nginx e não deve ser alcançável direto: com o
+  # endereço em loopback, o proxy é a única porta de entrada. Isso não é conforto — é a
+  # condição que torna `forward-headers-strategy` seguro logo abaixo. Vazio em
+  # desenvolvimento, para escutar em todas as interfaces.
+  address: ${SERVER_ADDRESS:}
+  # O limite de login por origem usa `getRemoteAddr()`. Atrás de um proxy, esse método
+  # devolve o endereço do próprio proxy para toda requisição, e os baldes de todos os
+  # clientes colapsam num só: o primeiro que errasse cinco senhas trancaria o login de
+  # todo mundo — a proteção viraria negação de serviço.
+  #
+  # Com FRAMEWORK, o contêiner resolve o endereço real a partir de `X-Forwarded-For` antes
+  # de a requisição chegar ao filtro. Só é seguro com as duas condições juntas: o nginx
+  # SOBRESCREVE o cabeçalho (`$remote_addr`, nunca `$proxy_add_x_forwarded_for`), e o
+  # `address` acima impede falar com a aplicação sem passar por ele. Sem elas, o cliente
+  # forjaria o próprio endereço e escaparia do limite. O padrão continua NONE.
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:NONE}
 
 spring:
   application:
@@ -74,3 +88,24 @@ todonotes:
     login-por-conta:
       tentativas: 10
       janela: 15m
+
+management:
+  server:
+    # Porta e endereço próprios, separados da API e ligados ao loopback: o health check
+    # existe para quem opera a máquina, não para a internet. Na porta da API ele ficaria
+    # exposto pelo proxy, e a alternativa — exigir autenticação — quebraria o único uso
+    # que ele tem, que é responder antes de haver sessão.
+    port: ${MANAGEMENT_PORT:8081}
+    address: 127.0.0.1
+  endpoints:
+    web:
+      exposure:
+        # Só health. O padrão do Actuator já é restritivo, mas declarar o conjunto evita
+        # que uma atualização do framework passe a expor algo novo sem ninguém decidir.
+        include: health
+  endpoint:
+    health:
+      # Sem detalhes: o corpo diz UP ou DOWN e nada sobre banco, disco ou versão. Mesmo
+      # numa porta fechada, detalhe de infraestrutura em resposta é mapa do sistema.
+      show-details: never
+      show-components: never

@@ -54,3 +54,10 @@ todonotes:
 ##                          frontend e API sob o mesmo domínio, deixe VAZIO: requisição
 ##                          de mesma origem não passa por CORS.
 ## JWT_EXPIRACAO_MINUTOS    padrão 1440, um dia.
+## SERVER_PORT              padrão 8080.
+## SERVER_ADDRESS           padrão vazio, todas as interfaces. Em produção, 127.0.0.1.
+## FORWARD_HEADERS_STRATEGY padrão NONE. Em produção, FRAMEWORK — e só junto do
+##                          SERVER_ADDRESS em loopback (ver application.yml).
+## MANAGEMENT_PORT          porta do health check, sempre em 127.0.0.1. Padrão 8081.
+##
+## O conjunto de produção está em deploy/todonotes.env.modelo.
