@@ -16,7 +16,7 @@ import java.util.List;
  *
  * <p>A distinção não é acadêmica: <b>com um filtro ligado, o índice do card na tela deixa
  * de ser a posição dele na faixa</b>, e arrastar depende de uma tradução que mora no cliente
- * (o {@code posicao-na-faixa.ts}), porque é ele que sabe quais filtros aplicou.
+ * (o {@code posicao-no-grupo.ts}), porque é ele que sabe quais filtros aplicou.
  *
  * <p>O par desta classe no outro modo de visualização é o {@link GrupoExibido}.
  */
