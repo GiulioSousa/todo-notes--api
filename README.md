@@ -20,7 +20,7 @@ com linha de versão própria. Na máquina de desenvolvimento este repositório 
 | Peça | Versão |
 | --- | --- |
 | Java | 25 |
-| Spring Boot | 4.1.2 |
+| Spring Boot | 4.2.0 |
 | JJWT | 0.13.0 |
 | Bucket4j | 8.22.0 |
 
