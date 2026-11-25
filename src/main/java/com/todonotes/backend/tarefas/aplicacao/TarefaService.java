@@ -3,6 +3,7 @@ package com.todonotes.backend.tarefas.aplicacao;
 import com.todonotes.backend.tarefas.dominio.Categoria;
 import com.todonotes.backend.tarefas.dominio.FaixaDePrioridade;
 import com.todonotes.backend.tarefas.dominio.FiltroDeConcluidas;
+import com.todonotes.backend.tarefas.dominio.GrupoDeCategoria;
 import com.todonotes.backend.tarefas.dominio.Preferencias;
 import com.todonotes.backend.tarefas.dominio.Prioridade;
 import com.todonotes.backend.tarefas.dominio.RepositorioCategoria;
@@ -18,25 +19,43 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
  * Os casos de uso das tarefas.
  *
- * <p>Não há regra de ordenação aqui: toda ela está na {@link FaixaDePrioridade}, e este
- * serviço só carrega a faixa, chama um método dela e manda gravar o que voltou. O que é
- * dele: conferir o dono, resolver a categoria, decidir o que a tela vê e abrir a transação.
+ * <p>Não há regra de ordenação aqui: toda ela está nos {@link com.todonotes.backend.tarefas.dominio.GrupoDeTarefas},
+ * e este serviço só carrega o grupo, chama um método dele e manda gravar o que voltou. O que
+ * é dele: conferir o dono, resolver a categoria, decidir o que a tela vê e abrir a transação.
  *
- * <p><b>A transação não é detalhe.</b> A restrição {@code uq_tarefas_ordem} é
- * {@code DEFERRABLE INITIALLY DEFERRED}, e é no commit que o banco confere as posições.
- * Qualquer operação que renumere uma faixa fora de uma transação falharia na primeira troca
- * de lugar — por isso {@code @Transactional} está em todo método que escreve, e não só nos
- * que escrevem em duas tabelas.
+ * <p><b>Dois modos de visualização, duas ordens.</b> A lista pode ser agrupada por prioridade
+ * ou por categoria, e cada agrupamento guarda a sua própria ordem — arrastar num deles não
+ * mexe no outro. Por isso há dois métodos de listar e dois de mover, e não um com um
+ * parâmetro: o que muda não é um detalhe da consulta, é qual das duas ordens está sendo
+ * lida ou reescrita.
+ *
+ * <p><b>A transação não é detalhe.</b> As restrições {@code uq_tarefas_ordem_na_prioridade} e
+ * {@code uq_tarefas_ordem_na_categoria} são {@code DEFERRABLE INITIALLY DEFERRED}, e é no
+ * commit que o banco confere as posições. Qualquer operação que renumere um grupo fora de uma
+ * transação falharia na primeira troca de lugar — por isso {@code @Transactional} está em
+ * todo método que escreve, e não só nos que escrevem em duas tabelas.
  */
 @Service
 public class TarefaService {
+
+    /**
+     * A ordem em que os grupos de categoria aparecem: pelo nome, e o das tarefas sem etiqueta
+     * por último — ele é o único que não é escolha de ninguém, e pô-lo no meio do alfabeto
+     * faria a lista parecer ter uma categoria chamada "sem categoria".
+     */
+    private static final Comparator<GrupoExibido> ORDEM_DOS_GRUPOS = Comparator.comparing(
+        (GrupoExibido grupo) -> grupo.categoria() == null ? null : grupo.categoria().getNome(),
+        Comparator.nullsLast(Comparator.<String>naturalOrder())
+    );
 
     private final RepositorioTarefa repositorioTarefa;
     private final RepositorioCategoria repositorioCategoria;
@@ -63,9 +82,9 @@ public class TarefaService {
     }
 
     /**
-     * A lista, nas três faixas — <b>sempre as três</b>, mesmo vazias: faixa vazia continua
-     * sendo área de soltura do arrastar, e omiti-la obrigaria o frontend a inventar a lista
-     * de prioridades para desenhar o alvo.
+     * A lista agrupada por prioridade, nas três faixas — <b>sempre as três</b>, mesmo vazias:
+     * faixa vazia continua sendo área de soltura do arrastar, e omiti-la obrigaria o frontend
+     * a inventar a lista de prioridades para desenhar o alvo.
      *
      * <p>A ordem dentro de cada faixa é a que o repositório devolveu, por posição. O
      * agrupamento preserva essa ordem porque apenas separa a lista já ordenada.
@@ -87,10 +106,32 @@ public class TarefaService {
     }
 
     /**
-     * Cria <b>no fim da faixa</b>: tarefa nova não passa na frente do que já foi ordenado.
+     * A lista agrupada por categoria, com <b>um grupo por categoria cadastrada</b> — mesmo
+     * vazia, pelo mesmo motivo das três faixas — e o grupo das tarefas sem etiqueta no fim.
      *
-     * <p>A posição vem de uma contagem, e não de carregar a faixa inteira para inserir no
-     * fim: as posições são {@code 0..n-1} sem buracos, então a contagem <b>é</b> a próxima
+     * <p>Os grupos saem na ordem dos nomes, que é a ordem em que o repositório de categorias
+     * os devolve; o das sem etiqueta vai por último porque é o único que não é uma escolha de
+     * ninguém. Dentro de cada grupo, a ordem é a {@code posicaoNaCategoria}, que o banco
+     * entrega pelo índice.
+     *
+     * <p>Não aceita filtro de categoria, e isso é de propósito: filtrar por categoria uma
+     * lista agrupada por categoria é escolher um grupo, e quem o faz é a tela, rolando até
+     * ele.
+     */
+    public List<GrupoExibido> listarPorCategoria(Long usuarioId, FiltroDeConcluidas concluidas) {
+        List<Tarefa> visiveis = aplicarFiltro(
+            usuarioId, repositorioTarefa.listarPorUsuarioOrdenadoPorCategoria(usuarioId), concluidas
+        );
+        return agruparPorCategoria(visiveis, repositorioCategoria.listarPorUsuario(usuarioId));
+    }
+
+    /**
+     * Cria <b>no fim dos dois grupos</b> a que a tarefa passa a pertencer: o da prioridade
+     * escolhida e o da categoria escolhida. Tarefa nova não passa na frente do que já foi
+     * ordenado, em nenhum dos dois modos de visualização.
+     *
+     * <p>As duas posições vêm de contagens, e não de carregar os grupos inteiros para inserir
+     * no fim: as posições são {@code 0..n-1} sem buracos, então a contagem <b>é</b> a próxima
      * posição, e criar fica em um {@code INSERT} em vez de um {@code INSERT} mais um
      * {@code UPDATE} por card que não mudou de lugar.
      *
@@ -102,18 +143,26 @@ public class TarefaService {
         Long usuarioId, String titulo, String descricao, Prioridade prioridade, Long categoriaId
     ) {
         Categoria categoria = exigirCategoria(categoriaId, usuarioId);
-        int posicao = repositorioTarefa.contarPorUsuarioEPrioridade(usuarioId, prioridade);
 
         Tarefa nova = Tarefa.nova(
-            titulo, descricao, prioridade, categoriaId, usuarioId, posicao, relogio.instant()
+            titulo, descricao, prioridade, categoriaId, usuarioId,
+            repositorioTarefa.contarPorUsuarioEPrioridade(usuarioId, prioridade),
+            repositorioTarefa.contarPorUsuarioECategoria(usuarioId, categoriaId),
+            relogio.instant()
         );
         return new TarefaComCategoria(repositorioTarefa.salvar(nova), categoria);
     }
 
     /**
-     * Edita título, descrição e categoria — e só. Prioridade e posição mudam por
-     * {@link #mover}, status por {@link #alterarStatus}: é o que mantém a regra da faixa num
-     * lugar só.
+     * Edita título, descrição e categoria. Prioridade e posições mudam por {@link #mover} e
+     * {@link #moverNaCategoria}, status por {@link #alterarStatus}.
+     *
+     * <p><b>Trocar a categoria aqui move o card</b>, para o fim do grupo de destino — não dá
+     * para mudar a etiqueta sem mudar de grupo, porque a etiqueta <b>é</b> a chave do grupo
+     * no outro modo de visualização. É a mesma razão pela qual trocar a prioridade no
+     * formulário cai no {@link #mover}: a regra do grupo fica num lugar só.
+     *
+     * <p>A ordem por prioridade não é tocada: o card continua na mesma faixa, no mesmo lugar.
      */
     @Transactional
     public TarefaComCategoria editar(
@@ -121,15 +170,25 @@ public class TarefaService {
     ) {
         Tarefa tarefa = buscarOuLancar(usuarioId, id);
         Categoria categoria = exigirCategoria(categoriaId, usuarioId);
+        Tarefa editada = tarefa.comDados(titulo, descricao);
 
-        Tarefa editada = repositorioTarefa.salvar(tarefa.comDados(titulo, descricao, categoriaId));
-        return new TarefaComCategoria(editada, categoria);
+        if (Objects.equals(categoriaId, tarefa.getCategoriaId())) {
+            return new TarefaComCategoria(repositorioTarefa.salvar(editada), categoria);
+        }
+
+        GrupoDeCategoria origem = carregarGrupo(usuarioId, tarefa.getCategoriaId()).remover(id);
+        GrupoDeCategoria destino = carregarGrupo(usuarioId, categoriaId).inserirNoFim(editada);
+
+        repositorioTarefa.salvarTodas(origem.tarefas());
+        repositorioTarefa.salvarTodas(destino.tarefas());
+
+        return new TarefaComCategoria(exigirNoGrupo(destino, id), categoria);
     }
 
     /**
-     * O arrastar. Devolve as faixas afetadas — uma, quando o card fica na mesma prioridade;
-     * duas, quando troca —, para o cliente não precisar recarregar a lista nem confiar na
-     * própria conta de posições.
+     * O arrastar no modo por prioridade. Devolve as faixas afetadas — uma, quando o card fica
+     * na mesma prioridade; duas, quando troca —, para o cliente não precisar recarregar a
+     * lista nem confiar na própria conta de posições.
      *
      * <p>Mudar de faixa é remover de uma e inserir na outra, e a prioridade do card passa a
      * ser a da faixa de destino sem que este método precise ajustá-la: quem a impõe é o
@@ -139,9 +198,12 @@ public class TarefaService {
      * deferida trabalhando: no meio da escrita há posições repetidas entre o que já foi
      * gravado e o que ainda não foi.
      *
-     * <p><b>As faixas voltam sem filtro</b>, inteiras. Enquanto o arrastar só for permitido
-     * na lista sem filtro, é a mesma coisa; se a decisão registrada em "Lacunas e riscos
-     * conhecidos" do {@code execucao.md} for outra, o filtro precisa chegar até aqui.
+     * <p><b>A ordem por categoria não é tocada</b>, e é justamente isso que os dois modos
+     * prometem: o card muda de faixa e continua no mesmo lugar do grupo da categoria dele.
+     *
+     * <p><b>As faixas voltam sem filtro</b>, inteiras: esta rota não conhece os filtros da
+     * tela. O cliente descarta da resposta os cards que não estavam à vista — é o que o
+     * {@code substituirFaixas} do frontend faz.
      */
     @Transactional
     public List<FaixaExibida> mover(Long usuarioId, Long id, Prioridade prioridade, int posicao) {
@@ -163,6 +225,46 @@ public class TarefaService {
             .map(faixa -> new FaixaExibida(faixa.prioridade(), faixa.tarefas().stream()
                 .map(cadaTarefa -> comCategoria(cadaTarefa, categorias))
                 .toList()))
+            .toList();
+    }
+
+    /**
+     * O arrastar no modo por categoria — o mesmo movimento do {@link #mover}, na outra ordem.
+     *
+     * <p><b>Soltar um card em outro grupo troca a etiqueta dele</b>, inclusive para nenhuma:
+     * {@code categoriaId} nulo é o grupo das sem etiqueta, e arrastar para lá é como se tira
+     * a categoria de uma tarefa sem abrir o formulário. Quem impõe a categoria é o
+     * {@code inserir} do grupo de destino, pela mesma razão de a faixa impor a prioridade.
+     *
+     * <p>A ordem por prioridade não é tocada: o card continua na faixa dele, no mesmo lugar.
+     *
+     * <p>Devolve os grupos afetados, inteiros e sem filtro, no mesmo formato da listagem.
+     */
+    @Transactional
+    public List<GrupoExibido> moverNaCategoria(
+        Long usuarioId, Long id, Long categoriaId, int posicao
+    ) {
+        Tarefa tarefa = buscarOuLancar(usuarioId, id);
+        exigirCategoria(categoriaId, usuarioId);
+        Long origem = tarefa.getCategoriaId();
+
+        List<GrupoDeCategoria> afetados = Objects.equals(origem, categoriaId)
+            ? List.of(carregarGrupo(usuarioId, categoriaId).mover(id, posicao))
+            : List.of(
+                carregarGrupo(usuarioId, origem).remover(id),
+                carregarGrupo(usuarioId, categoriaId).inserir(tarefa, posicao)
+            );
+
+        afetados.forEach(grupo -> repositorioTarefa.salvarTodas(grupo.tarefas()));
+
+        Map<Long, Categoria> categorias = categoriasPorId(usuarioId);
+        return afetados.stream()
+            .map(grupo -> new GrupoExibido(
+                grupo.categoriaId() == null ? null : categorias.get(grupo.categoriaId()),
+                grupo.tarefas().stream()
+                    .map(cadaTarefa -> comCategoria(cadaTarefa, categorias))
+                    .toList()))
+            .sorted(ORDEM_DOS_GRUPOS)
             .toList();
     }
 
@@ -189,21 +291,38 @@ public class TarefaService {
     /**
      * Exclui definitivamente — não há lixeira (ver "Fora do MVP").
      *
-     * <p><b>E renumera a faixa.</b> Não é zelo: sem isso as posições ficam com buraco
-     * (0, 1, 3), e a contagem que o {@link #criar} usa para achar o fim da faixa devolveria
-     * um lugar já ocupado — a próxima tarefa criada esbarraria na restrição única, no commit,
-     * e o erro apareceria longe da exclusão que o causou.
+     * <p><b>E renumera os dois grupos</b>, a faixa e o de categoria. Não é zelo: sem isso as
+     * posições ficam com buraco (0, 1, 3), e as contagens que o {@link #criar} usa para achar
+     * o fim de cada grupo devolveriam um lugar já ocupado — a próxima tarefa criada esbarraria
+     * na restrição única, no commit, e o erro apareceria longe da exclusão que o causou.
      *
-     * <p>A faixa é carregada <b>antes</b> do {@code excluir}: depois, a linha já não está
+     * <p><b>O segundo grupo é montado sobre o resultado do primeiro</b>, e essa ordem é o
+     * ponto delicado deste método. Cada grupo escreve só a posição que é dele; uma tarefa que
+     * esteja nos dois — mesma prioridade e mesma categoria da excluída — seria gravada duas
+     * vezes, e a segunda gravação levaria a posição que a primeira acabou de mudar, desfazendo
+     * a renumeração. Montar o grupo de categoria com as instâncias que a faixa já devolveu faz
+     * a linha sair com as duas posições novas.
+     *
+     * <p>Os grupos são carregados <b>antes</b> do {@code excluir}: depois, a linha já não está
      * lá para ser retirada da lista.
      */
     @Transactional
     public void excluir(Long usuarioId, Long id) {
         Tarefa tarefa = buscarOuLancar(usuarioId, id);
-        FaixaDePrioridade faixa = carregarFaixa(usuarioId, tarefa.getPrioridade());
+
+        List<Tarefa> comAFaixaRenumerada =
+            carregarFaixa(usuarioId, tarefa.getPrioridade()).remover(id).tarefas();
+
+        List<Tarefa> comAsDuasRenumeradas = GrupoDeCategoria.de(
+            tarefa.getCategoriaId(),
+            comAsVersoesMaisNovas(
+                repositorioTarefa.listarPorUsuarioECategoria(usuarioId, tarefa.getCategoriaId()),
+                comAFaixaRenumerada
+            )
+        ).remover(id).tarefas();
 
         repositorioTarefa.excluir(id);
-        repositorioTarefa.salvarTodas(faixa.remover(id).tarefas());
+        repositorioTarefa.salvarTodas(uniaoPorId(comAFaixaRenumerada, comAsDuasRenumeradas));
     }
 
     /**
@@ -235,6 +354,42 @@ public class TarefaService {
         };
     }
 
+    /**
+     * Separa a lista em grupos, um por categoria recebida, mais o das sem etiqueta no fim.
+     *
+     * <p>Os grupos vazios entram: grupo vazio continua sendo área de soltura, e é por ele que
+     * se põe o primeiro card numa categoria nova.
+     */
+    private List<GrupoExibido> agruparPorCategoria(
+        List<Tarefa> tarefas, List<Categoria> categorias
+    ) {
+        Map<Long, List<TarefaComCategoria>> porCategoria = new LinkedHashMap<>();
+        Map<Long, Categoria> porId = categorias.stream()
+            .collect(Collectors.toMap(Categoria::getId, categoria -> categoria));
+
+        List<TarefaComCategoria> semEtiqueta = new ArrayList<>();
+        for (Tarefa tarefa : tarefas) {
+            TarefaComCategoria comCategoria = new TarefaComCategoria(
+                tarefa, porId.get(tarefa.getCategoriaId())
+            );
+            if (tarefa.getCategoriaId() == null) {
+                semEtiqueta.add(comCategoria);
+            } else {
+                porCategoria.computeIfAbsent(tarefa.getCategoriaId(), chave -> new ArrayList<>())
+                    .add(comCategoria);
+            }
+        }
+
+        List<GrupoExibido> grupos = new ArrayList<>(categorias.size() + 1);
+        for (Categoria categoria : categorias) {
+            grupos.add(new GrupoExibido(
+                categoria, porCategoria.getOrDefault(categoria.getId(), List.of())
+            ));
+        }
+        grupos.add(new GrupoExibido(null, semEtiqueta));
+        return grupos;
+    }
+
     private Tarefa buscarOuLancar(Long usuarioId, Long id) {
         return repositorioTarefa.buscarPorIdEUsuario(id, usuarioId)
             .orElseThrow(RecursoNaoEncontradoException::tarefa);
@@ -243,6 +398,13 @@ public class TarefaService {
     private FaixaDePrioridade carregarFaixa(Long usuarioId, Prioridade prioridade) {
         return FaixaDePrioridade.de(
             prioridade, repositorioTarefa.listarPorUsuarioEPrioridade(usuarioId, prioridade)
+        );
+    }
+
+    /** {@code categoriaId} nulo carrega o grupo das tarefas sem etiqueta. */
+    private GrupoDeCategoria carregarGrupo(Long usuarioId, Long categoriaId) {
+        return GrupoDeCategoria.de(
+            categoriaId, repositorioTarefa.listarPorUsuarioECategoria(usuarioId, categoriaId)
         );
     }
 
@@ -280,5 +442,37 @@ public class TarefaService {
             tarefa,
             repositorioCategoria.buscarPorIdEUsuario(tarefa.getCategoriaId(), usuarioId).orElse(null)
         );
+    }
+
+    /**
+     * A tarefa que acabou de ser posta no grupo, com as posições que o grupo lhe deu.
+     *
+     * <p>Lança se não estiver lá, e isso é defesa contra erro de programação, não contra
+     * entrada do usuário: o card foi inserido duas linhas acima.
+     */
+    private static Tarefa exigirNoGrupo(GrupoDeCategoria grupo, Long id) {
+        return grupo.tarefas().stream()
+            .filter(tarefa -> Objects.equals(tarefa.getId(), id))
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException(
+                "A tarefa " + id + " não está no grupo onde acabou de ser inserida"));
+    }
+
+    /** As da base, trocadas pelas versões que outra operação já mexeu. */
+    private static List<Tarefa> comAsVersoesMaisNovas(List<Tarefa> base, List<Tarefa> mexidas) {
+        Map<Long, Tarefa> porId = mexidas.stream()
+            .collect(Collectors.toMap(Tarefa::getId, tarefa -> tarefa));
+
+        return base.stream()
+            .map(tarefa -> porId.getOrDefault(tarefa.getId(), tarefa))
+            .toList();
+    }
+
+    /** Uma lista só, sem repetir linha: quem aparece nas duas vale pela segunda. */
+    private static List<Tarefa> uniaoPorId(List<Tarefa> primeira, List<Tarefa> segunda) {
+        Map<Long, Tarefa> porId = new LinkedHashMap<>();
+        primeira.forEach(tarefa -> porId.put(tarefa.getId(), tarefa));
+        segunda.forEach(tarefa -> porId.put(tarefa.getId(), tarefa));
+        return List.copyOf(porId.values());
     }
 }

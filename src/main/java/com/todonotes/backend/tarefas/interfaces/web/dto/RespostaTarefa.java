@@ -14,10 +14,15 @@ import java.time.Instant;
  * etiqueta aparece em todo card, e resolvê-la no cliente obrigaria a lista de categorias a
  * estar carregada antes da primeira pintura. Nula quando a tarefa não tem etiqueta.
  *
- * <p>Traz {@code prioridade} e {@code posicao} mesmo dentro de uma faixa que já diz a
- * prioridade: é com esse par que o cliente monta o próximo {@code PATCH /lugar}, e deixá-lo
- * deduzir a posição pelo índice do card na tela é justamente o que não funciona quando há
- * filtro.
+ * <p><b>As duas posições vêm sempre, e com o nome do agrupamento de cada uma.</b> O card
+ * está nas duas ordens ao mesmo tempo — a da faixa de prioridade e a do grupo de categoria
+ * —, e é com elas que o cliente monta o próximo {@code PATCH}: a de prioridade para o
+ * {@code /lugar}, a de categoria para o {@code /lugar-na-categoria}. Um campo único chamado
+ * {@code posicao}, que mudasse de significado conforme a rota que respondeu, obrigaria quem
+ * lê o JSON a saber de onde ele veio para entender o número.
+ *
+ * <p>Deixar o cliente deduzir a posição pelo índice do card na tela é justamente o que não
+ * funciona quando há filtro: a tela esconde cards, e a ordem é do grupo inteiro.
  *
  * <p>Sem {@code usuarioId}: o dono sai do token, e devolvê-lo só confirmaria a quem já sabe.
  */
@@ -27,7 +32,8 @@ public record RespostaTarefa(
     String descricao,
     Status status,
     Prioridade prioridade,
-    int posicao,
+    int posicaoNaPrioridade,
+    int posicaoNaCategoria,
     RespostaCategoria categoria,
     Instant criadaEm,
     Instant dataConclusao
@@ -42,7 +48,8 @@ public record RespostaTarefa(
             tarefa.getDescricao(),
             tarefa.getStatus(),
             tarefa.getPrioridade(),
-            tarefa.getPosicao(),
+            tarefa.getPosicaoNaPrioridade(),
+            tarefa.getPosicaoNaCategoria(),
             comCategoria.categoria() == null
                 ? null
                 : RespostaCategoria.aPartirDoDominio(comCategoria.categoria()),

@@ -206,8 +206,8 @@ class ArrastarTest {
             assertThat(tarefa.get("id").asLong())
                 .as("id no indice %d da faixa %s", indice, prioridade)
                 .isEqualTo(idsEsperados[indice]);
-            assertThat(tarefa.get("posicao").asInt())
-                .as("posicao do id %s na faixa %s", tarefa.get("id"), prioridade)
+            assertThat(tarefa.get("posicaoNaPrioridade").asInt())
+                .as("posicao na faixa do id %s em %s", tarefa.get("id"), prioridade)
                 .isEqualTo(indice);
         }
     }

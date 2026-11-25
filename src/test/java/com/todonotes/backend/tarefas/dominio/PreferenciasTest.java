@@ -71,7 +71,8 @@ class PreferenciasTest {
     void tarefaNaoConcluidaNuncaEOcultada() {
         Preferencias preferencias = ocultandoEm(1);
         Tarefa pendente = Tarefa.nova(
-            "Fechar a V1", null, Prioridade.ALTA, null, USUARIO, 0, AGORA.minus(Duration.ofDays(400))
+            "Fechar a V1", null, Prioridade.ALTA, null, USUARIO, 0, 0,
+            AGORA.minus(Duration.ofDays(400))
         );
 
         assertThat(preferencias.ocultaTarefa(pendente, AGORA)).isFalse();
@@ -110,7 +111,7 @@ class PreferenciasTest {
     }
 
     private static Tarefa concluidaHa(Duration tempo) {
-        return Tarefa.nova("Fechar a V1", null, Prioridade.ALTA, null, USUARIO, 0, AGORA.minus(tempo))
+        return Tarefa.nova("Fechar a V1", null, Prioridade.ALTA, null, USUARIO, 0, 0, AGORA.minus(tempo))
             .comStatus(Status.CONCLUIDA, AGORA.minus(tempo));
     }
 }

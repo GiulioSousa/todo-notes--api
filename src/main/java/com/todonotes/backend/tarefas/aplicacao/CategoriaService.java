@@ -1,7 +1,10 @@
 package com.todonotes.backend.tarefas.aplicacao;
 
 import com.todonotes.backend.tarefas.dominio.Categoria;
+import com.todonotes.backend.tarefas.dominio.GrupoDeCategoria;
 import com.todonotes.backend.tarefas.dominio.RepositorioCategoria;
+import com.todonotes.backend.tarefas.dominio.RepositorioTarefa;
+import com.todonotes.backend.tarefas.dominio.Tarefa;
 import com.todonotes.backend.tarefas.dominio.excecoes.CategoriaDuplicadaException;
 import com.todonotes.backend.tarefas.dominio.excecoes.RecursoNaoEncontradoException;
 import org.springframework.stereotype.Service;
@@ -14,18 +17,27 @@ import java.util.Objects;
 /**
  * Os casos de uso das categorias: listar, criar, renomear, excluir.
  *
- * <p>Não há tela dedicada a elas no MVP — a criação acontece de dentro do formulário da
- * tarefa, em dois chamados (ver a Seção 6). Estas quatro operações existem para que isso
- * baste.
+ * <p>Têm duas portas de entrada: a aba de categorias, que faz as quatro, e o formulário da
+ * tarefa, que cria uma categoria nova antes de salvar o card (ver a Seção 6).
+ *
+ * <p><b>Depende do repositório de tarefas por causa da exclusão</b>, e isso não é vazamento
+ * de responsabilidade: excluir uma categoria mexe na ordem do grupo das tarefas sem etiqueta,
+ * que é um dado das tarefas. Está explicado no {@link #excluir}.
  */
 @Service
 public class CategoriaService {
 
     private final RepositorioCategoria repositorioCategoria;
+    private final RepositorioTarefa repositorioTarefa;
     private final Clock relogio;
 
-    public CategoriaService(RepositorioCategoria repositorioCategoria, Clock relogio) {
+    public CategoriaService(
+        RepositorioCategoria repositorioCategoria,
+        RepositorioTarefa repositorioTarefa,
+        Clock relogio
+    ) {
         this.repositorioCategoria = repositorioCategoria;
+        this.repositorioTarefa = repositorioTarefa;
         this.relogio = relogio;
     }
 
@@ -53,11 +65,34 @@ public class CategoriaService {
      * Exclui sem bloquear, mesmo em uso: as tarefas perdem a etiqueta pelo
      * {@code ON DELETE SET NULL (categoria_id)}. É o oposto do que o GeFinX faz com conta em
      * uso, e de propósito — categoria é etiqueta, não dado de que outro dado depende.
+     *
+     * <p><b>E põe as órfãs no fim do grupo das sem etiqueta</b>, o que não é acabamento: é o
+     * que impede a exclusão de falhar. As tarefas que perdem a etiqueta caem no grupo das sem
+     * categoria levando as posições que tinham no grupo que deixou de existir — posições que
+     * já estão ocupadas lá —, e a restrição {@code uq_tarefas_ordem_na_categoria} aborta a
+     * transação no commit. Está demonstrado no {@code db/conferir-v2.sql}, conferências 5 e 6:
+     * o mesmo {@code DELETE} falha sem a renumeração e passa com ela.
+     *
+     * <p>A ordem relativa das órfãs é preservada, e elas entram <b>depois</b> das que já
+     * estavam sem etiqueta: excluir uma categoria não é motivo para reordenar o que ninguém
+     * tocou.
+     *
+     * <p>Qual das duas escritas o Hibernate manda primeiro não importa, e isso é a restrição
+     * deferida trabalhando de novo: se o {@code DELETE} for primeiro, o {@code SET NULL} do
+     * banco cria as posições repetidas e os {@code UPDATE} as desfazem antes do commit; se
+     * forem os {@code UPDATE}, a categoria já não tem tarefa nenhuma quando a linha dela sai.
      */
     @Transactional
     public void excluir(Long usuarioId, Long id) {
         buscarOuLancar(usuarioId, id);
+
+        List<Tarefa> orfas = repositorioTarefa.listarPorUsuarioECategoria(usuarioId, id);
+        GrupoDeCategoria semEtiqueta = GrupoDeCategoria
+            .de(null, repositorioTarefa.listarPorUsuarioECategoria(usuarioId, null))
+            .inserirTodasNoFim(orfas);
+
         repositorioCategoria.excluir(id);
+        repositorioTarefa.salvarTodas(semEtiqueta.tarefas());
     }
 
     /**

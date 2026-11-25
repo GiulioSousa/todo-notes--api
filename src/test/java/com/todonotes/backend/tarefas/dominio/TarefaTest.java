@@ -21,7 +21,7 @@ class TarefaTest {
 
     @Test
     void nascePendenteESemDataDeConclusao() {
-        Tarefa tarefa = Tarefa.nova("Fechar a V1", null, Prioridade.ALTA, null, USUARIO, 0, ONTEM);
+        Tarefa tarefa = Tarefa.nova("Fechar a V1", null, Prioridade.ALTA, null, USUARIO, 0, 0, ONTEM);
 
         assertThat(tarefa.getStatus()).isEqualTo(Status.PENDENTE);
         assertThat(tarefa.getDataConclusao()).isNull();
@@ -75,17 +75,17 @@ class TarefaTest {
 
     @Test
     void oTituloEAparado() {
-        Tarefa tarefa = Tarefa.nova("  Fechar a V1  ", null, Prioridade.ALTA, null, USUARIO, 0, ONTEM);
+        Tarefa tarefa = Tarefa.nova("  Fechar a V1  ", null, Prioridade.ALTA, null, USUARIO, 0, 0, ONTEM);
 
         assertThat(tarefa.getTitulo()).isEqualTo("Fechar a V1");
     }
 
     @Test
     void tituloEmBrancoNaoEAceito() {
-        assertThatThrownBy(() -> Tarefa.nova("   ", null, Prioridade.ALTA, null, USUARIO, 0, ONTEM))
+        assertThatThrownBy(() -> Tarefa.nova("   ", null, Prioridade.ALTA, null, USUARIO, 0, 0, ONTEM))
             .isInstanceOf(IllegalArgumentException.class);
 
-        assertThatThrownBy(() -> Tarefa.nova(null, null, Prioridade.ALTA, null, USUARIO, 0, ONTEM))
+        assertThatThrownBy(() -> Tarefa.nova(null, null, Prioridade.ALTA, null, USUARIO, 0, 0, ONTEM))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -96,43 +96,54 @@ class TarefaTest {
      */
     @Test
     void descricaoEmBrancoViraNula() {
-        Tarefa tarefa = Tarefa.nova("Fechar a V1", "   ", Prioridade.ALTA, null, USUARIO, 0, ONTEM);
+        Tarefa tarefa = Tarefa.nova("Fechar a V1", "   ", Prioridade.ALTA, null, USUARIO, 0, 0, ONTEM);
 
         assertThat(tarefa.getDescricao()).isNull();
     }
 
     @Test
     void posicaoNegativaNaoEAceita() {
-        assertThatThrownBy(() -> Tarefa.nova("Fechar a V1", null, Prioridade.ALTA, null, USUARIO, -1, ONTEM))
+        assertThatThrownBy(() -> Tarefa.nova("Fechar a V1", null, Prioridade.ALTA, null, USUARIO, -1, 0, ONTEM))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void aTarefaPrecisaDeDonoEDePrioridade() {
-        assertThatThrownBy(() -> Tarefa.nova("Fechar a V1", null, null, null, USUARIO, 0, ONTEM))
+        assertThatThrownBy(() -> Tarefa.nova("Fechar a V1", null, null, null, USUARIO, 0, 0, ONTEM))
             .isInstanceOf(NullPointerException.class);
 
-        assertThatThrownBy(() -> Tarefa.nova("Fechar a V1", null, Prioridade.ALTA, null, null, 0, ONTEM))
+        assertThatThrownBy(() -> Tarefa.nova("Fechar a V1", null, Prioridade.ALTA, null, null, 0, 0, ONTEM))
             .isInstanceOf(NullPointerException.class);
     }
 
-    /** Prioridade e posição mudam pela faixa; status, por {@code comStatus}. */
+    /**
+     * O {@code comDados} edita texto, e nada mais.
+     *
+     * <p>Prioridade, categoria e as duas posições são chaves ou ordens de grupo, e quem as
+     * escreve são os grupos do domínio; status muda por {@code comStatus}. <b>A categoria
+     * ficou de fora quando o modo por categoria chegou</b>: a etiqueta passou a ser a chave
+     * de um grupo, e trocá-la aqui faria o card mudar de grupo sem ganhar lugar nele — duas
+     * tarefas na mesma posição do grupo de destino.
+     */
     @Test
-    void comDadosNaoMexeEmPrioridadePosicaoNemStatus() {
+    void comDadosMexeSoNoTextoDoCard() {
         Tarefa concluida = nova().comStatus(Status.CONCLUIDA, ONTEM);
 
-        Tarefa editada = concluida.comDados("Outro título", "Agora com descrição", 7L);
+        Tarefa editada = concluida.comDados("Outro título", "Agora com descrição");
 
         assertThat(editada.getTitulo()).isEqualTo("Outro título");
         assertThat(editada.getDescricao()).isEqualTo("Agora com descrição");
-        assertThat(editada.getCategoriaId()).isEqualTo(7L);
+        assertThat(editada.getCategoriaId()).isEqualTo(concluida.getCategoriaId());
         assertThat(editada.getPrioridade()).isEqualTo(concluida.getPrioridade());
-        assertThat(editada.getPosicao()).isEqualTo(concluida.getPosicao());
+        assertThat(editada.getPosicaoNaPrioridade())
+            .isEqualTo(concluida.getPosicaoNaPrioridade());
+        assertThat(editada.getPosicaoNaCategoria())
+            .isEqualTo(concluida.getPosicaoNaCategoria());
         assertThat(editada.getStatus()).isEqualTo(Status.CONCLUIDA);
         assertThat(editada.getDataConclusao()).isEqualTo(ONTEM);
     }
 
     private static Tarefa nova() {
-        return Tarefa.nova("Fechar a V1", null, Prioridade.ALTA, null, USUARIO, 0, ONTEM);
+        return Tarefa.nova("Fechar a V1", null, Prioridade.ALTA, null, USUARIO, 0, 0, ONTEM);
     }
 }

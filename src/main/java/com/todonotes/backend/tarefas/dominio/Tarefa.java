@@ -17,6 +17,11 @@ import java.util.Objects;
  * <p>A categoria também é só o id. O nome que aparece no card é resolvido na borda, ao
  * montar o DTO — carregar a categoria inteira aqui faria toda listagem arrastar texto que o
  * domínio nunca lê.
+ *
+ * <p><b>Duas posições, uma por agrupamento.</b> A tela mostra as tarefas agrupadas por
+ * prioridade ou por categoria, e cada modo guarda a sua própria ordem: arrastar num deles
+ * não mexe no outro. Por isso não existe {@code posicao} nesta classe — o nome não diria de
+ * qual das duas ordens se trata. Quem as escreve são os {@link GrupoDeTarefas}, e só eles.
  */
 public class Tarefa {
 
@@ -25,7 +30,8 @@ public class Tarefa {
     private final String descricao;
     private final Status status;
     private final Prioridade prioridade;
-    private final int posicao;
+    private final int posicaoNaPrioridade;
+    private final int posicaoNaCategoria;
     private final Long categoriaId;
     private final Long usuarioId;
     private final Instant criadaEm;
@@ -33,14 +39,16 @@ public class Tarefa {
 
     public Tarefa(
         Long id, String titulo, String descricao, Status status, Prioridade prioridade,
-        int posicao, Long categoriaId, Long usuarioId, Instant criadaEm, Instant dataConclusao
+        int posicaoNaPrioridade, int posicaoNaCategoria, Long categoriaId, Long usuarioId,
+        Instant criadaEm, Instant dataConclusao
     ) {
         this.id = id;
         this.titulo = titulo;
         this.descricao = descricao;
         this.status = status;
         this.prioridade = prioridade;
-        this.posicao = posicao;
+        this.posicaoNaPrioridade = posicaoNaPrioridade;
+        this.posicaoNaCategoria = posicaoNaCategoria;
         this.categoriaId = categoriaId;
         this.usuarioId = usuarioId;
         this.criadaEm = criadaEm;
@@ -50,17 +58,22 @@ public class Tarefa {
     /**
      * Tarefa recém-criada: nasce {@link Status#PENDENTE}, sem conclusão e sem id.
      *
-     * <p>A posição vem de fora porque quem a decide é a {@link FaixaDePrioridade} — criar
-     * uma tarefa é inseri-la no fim da faixa dela.
+     * <p>As duas posições vêm de fora, e são <b>o fim de cada um dos dois grupos a que a
+     * tarefa passa a pertencer</b>: o da prioridade escolhida e o da categoria escolhida —
+     * que pode ser o grupo das sem etiqueta. Quem as calcula é o caso de uso, por contagem,
+     * porque as posições são {@code 0..n-1} sem buracos e a contagem <b>é</b> o fim do
+     * grupo; carregar os dois grupos inteiros só para descobrir isso custaria duas
+     * listagens e reescreveria todo card que não mudou de lugar.
      */
     public static Tarefa nova(
-        String titulo, String descricao, Prioridade prioridade,
-        Long categoriaId, Long usuarioId, int posicao, Instant agora
+        String titulo, String descricao, Prioridade prioridade, Long categoriaId, Long usuarioId,
+        int posicaoNaPrioridade, int posicaoNaCategoria, Instant agora
     ) {
         return new Tarefa(
             null, exigirTitulo(titulo), normalizarDescricao(descricao), Status.PENDENTE,
             Objects.requireNonNull(prioridade, "A prioridade é obrigatória"),
-            exigirPosicaoValida(posicao), categoriaId,
+            exigirPosicaoValida(posicaoNaPrioridade), exigirPosicaoValida(posicaoNaCategoria),
+            categoriaId,
             Objects.requireNonNull(usuarioId, "A tarefa precisa de um dono"),
             agora, null
         );
@@ -83,13 +96,14 @@ public class Tarefa {
 
         Instant novaDataConclusao = novoStatus.concluida() ? agora : null;
         return new Tarefa(
-            id, titulo, descricao, novoStatus, prioridade, posicao,
-            categoriaId, usuarioId, criadaEm, novaDataConclusao
+            id, titulo, descricao, novoStatus, prioridade, posicaoNaPrioridade,
+            posicaoNaCategoria, categoriaId, usuarioId, criadaEm, novaDataConclusao
         );
     }
 
     /**
-     * Põe a tarefa num lugar da lista — e lugar é o par {@code (prioridade, posicao)}.
+     * Põe a tarefa num lugar da lista agrupada por prioridade — e lugar é o par
+     * {@code (prioridade, posicaoNaPrioridade)}.
      *
      * <p>Devolve a própria instância quando nada muda. A {@link FaixaDePrioridade} renumera
      * a faixa inteira a cada movimento, e na prática a maioria dos cards fica onde estava;
@@ -99,24 +113,52 @@ public class Tarefa {
      * duas tarefas na mesma posição.
      */
     Tarefa comLugar(Prioridade novaPrioridade, int novaPosicao) {
-        if (novaPrioridade == this.prioridade && novaPosicao == this.posicao) {
+        if (novaPrioridade == this.prioridade && novaPosicao == this.posicaoNaPrioridade) {
             return this;
         }
 
         return new Tarefa(
             id, titulo, descricao, status, novaPrioridade, exigirPosicaoValida(novaPosicao),
-            categoriaId, usuarioId, criadaEm, dataConclusao
+            posicaoNaCategoria, categoriaId, usuarioId, criadaEm, dataConclusao
         );
     }
 
     /**
-     * Edita o que o formulário edita. Prioridade e posição ficam de fora de propósito: elas
-     * mudam pela faixa, e status muda por {@link #comStatus}.
+     * O mesmo, na lista agrupada por categoria: o par
+     * {@code (categoriaId, posicaoNaCategoria)}.
+     *
+     * <p><b>Entrar num grupo é o que muda a categoria do card</b>, do mesmo jeito que entrar
+     * numa faixa é o que muda a prioridade. {@code null} é o grupo das tarefas sem etiqueta,
+     * e arrastar um card para lá tira a etiqueta dele — não é caso especial, é o grupo cuja
+     * chave é nula. A unicidade no banco enxerga esse grupo como qualquer outro, porque é
+     * {@code NULLS NOT DISTINCT}.
      */
-    public Tarefa comDados(String novoTitulo, String novaDescricao, Long novaCategoriaId) {
+    Tarefa comLugarNaCategoria(Long novaCategoriaId, int novaPosicao) {
+        if (Objects.equals(novaCategoriaId, this.categoriaId)
+            && novaPosicao == this.posicaoNaCategoria) {
+            return this;
+        }
+
+        return new Tarefa(
+            id, titulo, descricao, status, prioridade, posicaoNaPrioridade,
+            exigirPosicaoValida(novaPosicao), novaCategoriaId, usuarioId, criadaEm, dataConclusao
+        );
+    }
+
+    /**
+     * Edita o que o formulário edita de verdade: título e descrição.
+     *
+     * <p>Prioridade, categoria e as duas posições ficam de fora, e por um motivo só — as
+     * três são chaves ou ordens de grupo, e quem as escreve são os {@link GrupoDeTarefas}.
+     * Status muda por {@link #comStatus}. Deixar a categoria aqui faria o card trocar de
+     * grupo sem ganhar lugar nele, e duas tarefas acabariam na mesma posição do grupo de
+     * destino.
+     */
+    public Tarefa comDados(String novoTitulo, String novaDescricao) {
         return new Tarefa(
             id, exigirTitulo(novoTitulo), normalizarDescricao(novaDescricao), status, prioridade,
-            posicao, novaCategoriaId, usuarioId, criadaEm, dataConclusao
+            posicaoNaPrioridade, posicaoNaCategoria, categoriaId, usuarioId, criadaEm,
+            dataConclusao
         );
     }
 
@@ -168,8 +210,12 @@ public class Tarefa {
         return prioridade;
     }
 
-    public int getPosicao() {
-        return posicao;
+    public int getPosicaoNaPrioridade() {
+        return posicaoNaPrioridade;
+    }
+
+    public int getPosicaoNaCategoria() {
+        return posicaoNaCategoria;
     }
 
     public Long getCategoriaId() {

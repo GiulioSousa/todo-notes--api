@@ -31,10 +31,10 @@ public class RepositorioTarefaJpaAdapter implements RepositorioTarefa {
     }
 
     /**
-     * Grava a faixa renumerada de uma vez.
+     * Grava o grupo renumerado de uma vez.
      *
      * <p>Não devolve nada de propósito: quem chamou já tem as tarefas com as posições
-     * certas — elas vieram da {@code FaixaDePrioridade} —, e devolver as entidades
+     * certas — elas vieram de um {@code GrupoDeTarefas} —, e devolver as entidades
      * recém-mescladas só daria a impressão de que o banco mudou algo.
      */
     @Override
@@ -48,27 +48,60 @@ public class RepositorioTarefaJpaAdapter implements RepositorioTarefa {
             .map(TarefaJpaEntity::paraDominio);
     }
 
-    /** Dois caminhos, e não um {@code WHERE} com comparação a nulo — ver o repositório. */
+    /**
+     * Dois caminhos, e não um {@code WHERE} com comparação a nulo — ver o repositório.
+     *
+     * <p>Aqui o nulo é <b>filtro ausente</b>: traz todas as categorias. Não confundir com o
+     * {@link #listarPorUsuarioECategoria}, onde o nulo é uma chave.
+     */
     @Override
     public List<Tarefa> listarPorUsuario(Long usuarioId, Long categoriaId) {
         List<TarefaJpaEntity> encontradas = categoriaId == null
-            ? springDataRepository.findByUsuarioIdOrderByPrioridadeAscPosicaoAsc(usuarioId)
-            : springDataRepository.findByUsuarioIdAndCategoriaIdOrderByPrioridadeAscPosicaoAsc(
+            ? springDataRepository.findByUsuarioIdOrderByPrioridadeAscPosicaoNaPrioridadeAsc(usuarioId)
+            : springDataRepository
+                .findByUsuarioIdAndCategoriaIdOrderByPrioridadeAscPosicaoNaPrioridadeAsc(
+                    usuarioId, categoriaId);
+
+        return paraDominio(encontradas);
+    }
+
+    @Override
+    public List<Tarefa> listarPorUsuarioOrdenadoPorCategoria(Long usuarioId) {
+        return paraDominio(
+            springDataRepository.findByUsuarioIdOrderByCategoriaIdAscPosicaoNaCategoriaAsc(usuarioId)
+        );
+    }
+
+    @Override
+    public List<Tarefa> listarPorUsuarioEPrioridade(Long usuarioId, Prioridade prioridade) {
+        return paraDominio(
+            springDataRepository.findByUsuarioIdAndPrioridadeOrderByPosicaoNaPrioridadeAsc(
+                usuarioId, prioridade)
+        );
+    }
+
+    /** Aqui o nulo é a <b>chave</b> do grupo das sem etiqueta, e não filtro ausente. */
+    @Override
+    public List<Tarefa> listarPorUsuarioECategoria(Long usuarioId, Long categoriaId) {
+        List<TarefaJpaEntity> encontradas = categoriaId == null
+            ? springDataRepository.findByUsuarioIdAndCategoriaIdIsNullOrderByPosicaoNaCategoriaAsc(
+                usuarioId)
+            : springDataRepository.findByUsuarioIdAndCategoriaIdOrderByPosicaoNaCategoriaAsc(
                 usuarioId, categoriaId);
 
         return paraDominio(encontradas);
     }
 
     @Override
-    public List<Tarefa> listarPorUsuarioEPrioridade(Long usuarioId, Prioridade prioridade) {
-        return paraDominio(
-            springDataRepository.findByUsuarioIdAndPrioridadeOrderByPosicaoAsc(usuarioId, prioridade)
-        );
+    public int contarPorUsuarioEPrioridade(Long usuarioId, Prioridade prioridade) {
+        return springDataRepository.countByUsuarioIdAndPrioridade(usuarioId, prioridade);
     }
 
     @Override
-    public int contarPorUsuarioEPrioridade(Long usuarioId, Prioridade prioridade) {
-        return springDataRepository.countByUsuarioIdAndPrioridade(usuarioId, prioridade);
+    public int contarPorUsuarioECategoria(Long usuarioId, Long categoriaId) {
+        return categoriaId == null
+            ? springDataRepository.countByUsuarioIdAndCategoriaIdIsNull(usuarioId)
+            : springDataRepository.countByUsuarioIdAndCategoriaId(usuarioId, categoriaId);
     }
 
     @Override

@@ -61,8 +61,20 @@ public class TarefaJpaEntity {
     @Column(nullable = false, columnDefinition = "prioridade_tarefa")
     private Prioridade prioridade;
 
-    @Column(nullable = false)
-    private int posicao;
+    /**
+     * As duas ordens, uma por modo de visualização.
+     *
+     * <p>Cada uma tem a sua restrição única deferida no banco
+     * ({@code uq_tarefas_ordem_na_prioridade} e {@code uq_tarefas_ordem_na_categoria}), e
+     * nenhuma das duas é escrita por caso de uso — quem as define são os grupos do domínio.
+     * O nome diz de qual agrupamento é a posição porque um {@code posicao} solto, com duas na
+     * mesma linha, convida ao erro silencioso de ler a outra.
+     */
+    @Column(name = "posicao_na_prioridade", nullable = false)
+    private int posicaoNaPrioridade;
+
+    @Column(name = "posicao_na_categoria", nullable = false)
+    private int posicaoNaCategoria;
 
     @Column(name = "categoria_id")
     private Long categoriaId;
@@ -83,14 +95,16 @@ public class TarefaJpaEntity {
 
     public TarefaJpaEntity(
         Long id, String titulo, String descricao, Status status, Prioridade prioridade,
-        int posicao, Long categoriaId, Long usuarioId, Instant criadaEm, Instant dataConclusao
+        int posicaoNaPrioridade, int posicaoNaCategoria, Long categoriaId, Long usuarioId,
+        Instant criadaEm, Instant dataConclusao
     ) {
         this.id = id;
         this.titulo = titulo;
         this.descricao = descricao;
         this.status = status;
         this.prioridade = prioridade;
-        this.posicao = posicao;
+        this.posicaoNaPrioridade = posicaoNaPrioridade;
+        this.posicaoNaCategoria = posicaoNaCategoria;
         this.categoriaId = categoriaId;
         this.usuarioId = usuarioId;
         this.criadaEm = criadaEm;
@@ -106,14 +120,15 @@ public class TarefaJpaEntity {
     public static TarefaJpaEntity deDominio(Tarefa tarefa) {
         return new TarefaJpaEntity(
             tarefa.getId(), tarefa.getTitulo(), tarefa.getDescricao(), tarefa.getStatus(),
-            tarefa.getPrioridade(), tarefa.getPosicao(), tarefa.getCategoriaId(),
+            tarefa.getPrioridade(), tarefa.getPosicaoNaPrioridade(),
+            tarefa.getPosicaoNaCategoria(), tarefa.getCategoriaId(),
             tarefa.getUsuarioId(), tarefa.getCriadaEm(), tarefa.getDataConclusao()
         );
     }
 
     public Tarefa paraDominio() {
         return new Tarefa(
-            id, titulo, descricao, status, prioridade, posicao,
+            id, titulo, descricao, status, prioridade, posicaoNaPrioridade, posicaoNaCategoria,
             categoriaId, usuarioId, criadaEm, dataConclusao
         );
     }

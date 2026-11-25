@@ -8,6 +8,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * A regra do arrastar é a única lógica de verdade deste projeto, e estes testes existem
@@ -201,6 +202,35 @@ class FaixaDePrioridadeTest {
         conferir(vazia.inserir(tarefa(1L, PRIORIDADE, 0), 7), 1L);
     }
 
+    /**
+     * <b>A promessa dos dois modos de visualização.</b> Arrastar na faixa não pode mexer na
+     * ordem do grupo de categoria — se mexesse, reordenar por prioridade embaralharia a outra
+     * tela, que é exatamente o que ter duas ordens existe para evitar.
+     *
+     * <p>As posições de categoria aqui estão fora de ordem de propósito: a faixa não é dona
+     * delas, e tem de devolvê-las como as recebeu, inclusive bagunçadas.
+     */
+    @Test
+    void mexerNaFaixaNaoMexeNaOrdemDoGrupoDeCategoria() {
+        FaixaDePrioridade faixa = FaixaDePrioridade.de(PRIORIDADE, List.of(
+            tarefa(1L, PRIORIDADE, 0, 7),
+            tarefa(2L, PRIORIDADE, 1, 3),
+            tarefa(3L, PRIORIDADE, 2, 5)
+        ));
+
+        FaixaDePrioridade depois = faixa.mover(1L, 2).inserir(tarefa(99L, Prioridade.ALTA, 0, 2), 0);
+
+        conferir(depois, 99L, 2L, 3L, 1L);
+        assertThat(depois.tarefas())
+            .extracting(Tarefa::getId, Tarefa::getPosicaoNaCategoria)
+            .containsExactly(
+                tuple(99L, 2),
+                tuple(2L, 3),
+                tuple(3L, 5),
+                tuple(1L, 7)
+            );
+    }
+
     @Test
     void contemResponderSobreOQueEstaNaFaixa() {
         FaixaDePrioridade faixa = faixaCom(1L, 2L);
@@ -217,7 +247,7 @@ class FaixaDePrioridadeTest {
         for (int indice = 0; indice < faixa.tamanho(); indice++) {
             Tarefa tarefa = faixa.tarefas().get(indice);
 
-            assertThat(tarefa.getPosicao())
+            assertThat(tarefa.getPosicaoNaPrioridade())
                 .as("posição da tarefa %d", tarefa.getId())
                 .isEqualTo(indice);
             assertThat(tarefa.getPrioridade())
@@ -236,9 +266,15 @@ class FaixaDePrioridadeTest {
     }
 
     private static Tarefa tarefa(Long id, Prioridade prioridade, int posicao) {
+        return tarefa(id, prioridade, posicao, 0);
+    }
+
+    private static Tarefa tarefa(
+        Long id, Prioridade prioridade, int posicaoNaPrioridade, int posicaoNaCategoria
+    ) {
         return new Tarefa(
-            id, "Tarefa " + id, null, Status.PENDENTE, prioridade, posicao,
-            null, USUARIO, CRIADA_EM, null
+            id, "Tarefa " + id, null, Status.PENDENTE, prioridade, posicaoNaPrioridade,
+            posicaoNaCategoria, null, USUARIO, CRIADA_EM, null
         );
     }
 }
